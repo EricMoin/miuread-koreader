@@ -18,15 +18,25 @@ end
 -- 1. install_id mirrors Devices.generateInstallId (E-Ink 2.1.2)
 ------------------------------------------------------------------
 local Protocol=require("miuread.protocol")
+-- 32 chars: "eink" | "33" | 4691225 | 19-digit hash
 local dev="eink3346912251234567890123456789"
 local install_id=Protocol.install_id(dev)
-check("install_id is 28 chars","#"..tostring(#install_id)=="#28",#install_id)
-check("install_id starts with 31",install_id:sub(1,2)=="31",install_id:sub(1,2))
-check("install_id device block is 7 digits",install_id:sub(3,9):match("^%d%d%d%d%d%d%d$")~=nil,install_id:sub(3,9))
-check("install_id time block is 9 digits starting 1",install_id:sub(10,18):match("^1%d%d%d%d%d%d%d%d$")~=nil,install_id:sub(10,18))
-check("install_id random block is 10 digits starting 1",install_id:sub(19,28):match("^1%d%d%d%d%d%d%d%d%d$")~=nil,install_id:sub(19,28))
-check("install_id is deterministic",Protocol.install_id(dev)==install_id)
-check("install_id is device-specific",Protocol.install_id("anotherdevice")~=install_id)
+check("deviceId is 32 chars",#dev==32,#dev)
+check("installId is 32 chars",#install_id==32,#install_id)
+check("installId keeps the eink edition prefix",install_id:sub(1,6)=="eink31",install_id:sub(1,6))
+-- generateDeviceIdV2 and generateInstallId emit the same
+-- DEVICE/BOARD/CPU_ABI/DISPLAY/HOST/TAGS/ID len%10 block, so the pair must
+-- agree digit for digit. This is the invariant the two fields are cross-checked on.
+check("installId repeats the deviceId digit block",install_id:sub(7,13)==dev:sub(7,13),
+    install_id:sub(7,13).." vs "..dev:sub(7,13))
+check("installId time block is 9 digits starting 1",install_id:sub(14,22):match("^1%d%d%d%d%d%d%d%d$")~=nil,install_id:sub(14,22))
+check("installId random block is 10 digits starting 1",install_id:sub(23,32):match("^1%d%d%d%d%d%d%d%d%d$")~=nil,install_id:sub(23,32))
+check("installId is deterministic",Protocol.install_id(dev)==install_id)
+check("installId is device-specific",Protocol.install_id("eink3355511111222222222222222222")~=install_id)
+-- An unrecognised device id still has to yield a well-formed install id.
+local fallback=Protocol.install_id("garbage")
+check("fallback keeps the eink31 prefix",fallback:sub(1,6)=="eink31",fallback:sub(1,6))
+check("fallback is 32 chars",#fallback==32,#fallback)
 
 ------------------------------------------------------------------
 -- 2. ReadBookInShelf body fields

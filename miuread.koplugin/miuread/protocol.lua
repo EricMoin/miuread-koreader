@@ -72,25 +72,37 @@ function P.app_id(ua)
     return "wb"..table.concat(prefix).."h"..tostring(h)
 end
 
--- E-Ink 2.1.2 Devices.generateInstallId builds a 28-character credential:
---   "31"                                     2
---   DeviceInfo lengths % 10 for DEVICE, BOARD, CPU_ABI, DISPLAY, HOST,
---   TAGS and ID                              7
---   System.currentTimeMillis() % 1e8 + 1e8   9   (always 100000000..199999999)
---   |Random.nextLong()| % 1e9 + 1e9          10  (always 1000000000..1999999999)
--- The reference client draws the last two blocks once, at install time, and
--- then reuses the value for the life of the installation. We derive the same
--- shape from the bound device identity instead, so login and read reporting
--- agree without carrying extra persisted state — the observable contract
--- (stable, structurally plausible 28-char install id) is identical.
-local INSTALL_DEVICE_FIELDS = {"BOOX", "onyx", "arm64-v8a", "20240101", "onyx", "release-keys", "onyx"}
+-- E-Ink BuildConfig.FLAVOR_edition == "eink" and DeviceId returns
+--     FLAVOR_edition .. Devices.generateDeviceIdV2(context, getDiffDeviceStrV2(context))
+--     FLAVOR_edition .. Devices.generateInstallId(context)
+-- Both encoders emit the SAME seven len%10 digits, in the same field order:
+--     DEVICE, BOARD, CPU_ABI, DISPLAY, HOST, TAGS, ID
+-- so one installation's install id has to repeat the digit block its device id
+-- carries; a pair that disagrees is internally inconsistent by construction.
+--     device id : "eink" "33" <7 digits> <19-digit |BKDRHashLong(diffStr)|>
+--     install id: "eink" "31" <7 digits> <9-digit time> <10-digit random>
+-- The digit block is copied out of the bound device id rather than recomputed,
+-- so the two stay consistent even when the device id was captured from a real
+-- device instead of generated here. The trailing 19-digit hash is left as-is
+-- upstream: it covers IMEI, total memory and SD size, none of which a server
+-- can recompute, so only its shape and stability are observable.
+local INSTALL_FALLBACK_FIELDS = {"BOOX", "onyx", "arm64-v8a", "20240101", "onyx", "release-keys", "onyx"}
+
 function P.install_id(device_id)
-    local out = {"31"}
-    for _, field in ipairs(INSTALL_DEVICE_FIELDS) do out[#out + 1] = tostring(#field % 10) end
-    local seed = D.sha256(tostring(device_id or ""))
-    out[#out + 1] = tostring(100000000 + tonumber(seed:sub(1, 8), 16) % 100000000)
-    out[#out + 1] = tostring(1000000000 + tonumber(seed:sub(9, 16), 16) % 1000000000)
-    return table.concat(out)
+    local text = tostring(device_id or "")
+    local edition, _, digits = text:match("^(%a+)(%d%d)(%d%d%d%d%d%d%d)")
+    if not edition then
+        -- Unexpected device id shape: keep the value structurally valid with a
+        -- fixed BOOX profile rather than emitting something half-formed.
+        edition = "eink"
+        local block = {}
+        for index, field in ipairs(INSTALL_FALLBACK_FIELDS) do block[index] = tostring(#field % 10) end
+        digits = table.concat(block)
+    end
+    local seed = D.sha256(text)
+    return edition .. "31" .. digits
+        .. tostring(100000000 + tonumber(seed:sub(1, 8), 16) % 100000000)
+        .. tostring(1000000000 + tonumber(seed:sub(9, 16), 16) % 1000000000)
 end
 function P.read_fields(opt)
     opt = opt or {}
