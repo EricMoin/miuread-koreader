@@ -71,6 +71,27 @@ function P.app_id(ua)
     local h=0; for i=1,#ua do h=bit.band(131*h+ua:byte(i),0x7fffffff) end
     return "wb"..table.concat(prefix).."h"..tostring(h)
 end
+
+-- E-Ink 2.1.2 Devices.generateInstallId builds a 28-character credential:
+--   "31"                                     2
+--   DeviceInfo lengths % 10 for DEVICE, BOARD, CPU_ABI, DISPLAY, HOST,
+--   TAGS and ID                              7
+--   System.currentTimeMillis() % 1e8 + 1e8   9   (always 100000000..199999999)
+--   |Random.nextLong()| % 1e9 + 1e9          10  (always 1000000000..1999999999)
+-- The reference client draws the last two blocks once, at install time, and
+-- then reuses the value for the life of the installation. We derive the same
+-- shape from the bound device identity instead, so login and read reporting
+-- agree without carrying extra persisted state — the observable contract
+-- (stable, structurally plausible 28-char install id) is identical.
+local INSTALL_DEVICE_FIELDS = {"BOOX", "onyx", "arm64-v8a", "20240101", "onyx", "release-keys", "onyx"}
+function P.install_id(device_id)
+    local out = {"31"}
+    for _, field in ipairs(INSTALL_DEVICE_FIELDS) do out[#out + 1] = tostring(#field % 10) end
+    local seed = D.sha256(tostring(device_id or ""))
+    out[#out + 1] = tostring(100000000 + tonumber(seed:sub(1, 8), 16) % 100000000)
+    out[#out + 1] = tostring(1000000000 + tonumber(seed:sub(9, 16), 16) % 1000000000)
+    return table.concat(out)
+end
 function P.read_fields(opt)
     opt = opt or {}
     local now=opt.now or os.time(); local ts=opt.ts or now*1000+math.random(0,999); local rn=opt.rn or math.random(0,999)

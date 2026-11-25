@@ -4,6 +4,7 @@
 -- book.koplugin/source/wechat/app.lua; changed 2026-10-25 for Native batch DTOs
 -- (GPL-3.0); see licenses/moon-GPL-3.0.txt and THIRD_PARTY_NOTICES.
 local Digest = require("miuread.digests")
+local Protocol = require("miuread.protocol")
 local bit = require("bit")
 local M = {}
 -- E-Ink 2.1.2 classes5.dex: FeatureGuestTokenWrapper passes this public
@@ -124,8 +125,19 @@ function M.book(credentials,book_id,rows,guest_token,now,random)
     local zone=assert(M.time_zone(now),"reading-time zone unavailable")
     -- Match Native's BaseBookReadPostBody, selected after a newer cloud
     -- position is detected. Deliberately omit every chapter/offset coordinate.
-    local body={bookId=tostring(book_id),bookVersion=book_version,appId="",deviceId=credentials.deviceId,
-        installId="",summary="",progress=0,currentProgress=0,autoTime=0,isLecture=0,
+    --
+    -- appId and installId are NOT optional in the real client: ReportService
+    -- always calls
+    --     setAppId(DeviceId.get(context))
+    --     setDeviceId(DeviceId.get(context))     -- idempotent, same value
+    --     setInstallId(DeviceId.getInstallId())
+    -- before posting. Empty strings are only the domain object's constructor
+    -- default, so sending them advertises a client that never ran that code.
+    -- appId also feeds generatePayLoad() below, so the signature covers it.
+    local device_id=tostring(credentials.deviceId or "")
+    local install_id=tostring(credentials.installId or Protocol.install_id(device_id))
+    local body={bookId=tostring(book_id),bookVersion=book_version,appId=device_id,deviceId=device_id,
+        installId=install_id,summary="",progress=0,currentProgress=0,autoTime=0,isLecture=0,
         isResendReadingInfo=1,lectureTime=0,lectureTextTime=0,novalTime=0,ttsTime=0,
         -- Fastjson maps isFinish() to finish, and excludes voiceType through
         -- JSONField(serialize=false). novelTime is renamed to novalTime above.

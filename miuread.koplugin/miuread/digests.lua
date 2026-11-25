@@ -127,4 +127,59 @@ function D.sha256_file(path,chunk_size)
     return table.concat(out)
 end
 
+-- MurmurHash3 x86_32, the primitive behind the WeRead Web client's wr_fp
+-- cookie: the browser computes murmur3(JSON.stringify(deviceFingerprint, null, 4))
+-- and stores the unsigned 32-bit result. Reproducing the same hash family keeps
+-- a plugin installation's device identity in the shape a browser would produce
+-- instead of bytes straight out of an entropy source.
+local M3_C1, M3_C2 = 0xcc9e2d51, 0x1b873593
+local function unsigned32(x)
+    x = band(x, 0xffffffff)
+    if x < 0 then x = x + 4294967296 end
+    return x
+end
+-- 32-bit modular multiply kept exact: both halves stay well inside the 53-bit
+-- mantissa, so no intermediate ever loses precision.
+local function mul32(a, b)
+    local al, ah = band(a, 0xffff), band(rshift(a, 16), 0xffff)
+    local bl, bh = band(b, 0xffff), band(rshift(b, 16), 0xffff)
+    local lo = al * bl
+    local mid = (al * bh + ah * bl) % 65536
+    return band(lo + mid * 65536, 0xffffffff)
+end
+function D.murmur3_32(input, seed)
+    local s = tostring(input or "")
+    local len = #s
+    local h = band(seed or 0, 0xffffffff)
+    local n = len - (len % 4)
+    for pos = 1, n, 4 do
+        local a, b, c, d = s:byte(pos, pos + 3)
+        local k = bor(a, lshift(b, 8), lshift(c, 16), lshift(d, 24))
+        k = mul32(k, M3_C1)
+        k = bor(lshift(k, 15), rshift(k, 17))
+        k = mul32(k, M3_C2)
+        h = bxor(h, k)
+        h = bor(lshift(h, 13), rshift(h, 19))
+        h = band(mul32(h, 5) + 0xe6546b64, 0xffffffff)
+    end
+    local rem = len % 4
+    if rem > 0 then
+        local k = 0
+        if rem == 3 then k = bor(k, lshift(s:byte(n + 3), 16)) end
+        if rem >= 2 then k = bor(k, lshift(s:byte(n + 2), 8)) end
+        k = bor(k, s:byte(n + 1))
+        k = mul32(k, M3_C1)
+        k = bor(lshift(k, 15), rshift(k, 17))
+        k = mul32(k, M3_C2)
+        h = bxor(h, k)
+    end
+    h = bxor(h, len)
+    h = bxor(h, rshift(h, 16))
+    h = mul32(h, 0x85ebca6b)
+    h = bxor(h, rshift(h, 13))
+    h = mul32(h, 0xc2b2ae35)
+    h = bxor(h, rshift(h, 16))
+    return unsigned32(h)
+end
+
 return D

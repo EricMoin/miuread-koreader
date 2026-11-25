@@ -160,7 +160,10 @@ function Client:finish(data)
     if vid~=self.vid or session~=self.session then error("当前账号已变更，请重新授权书架管理") end
     if not nonempty(data.wx_code) then error("客户端授权码缺失") end
     local body=login_body(self.device_id)
-    body.code=data.wx_code; body.appFirstInstall=1; body.installId="eink31"..digits(26)
+    body.code=data.wx_code; body.appFirstInstall=1
+    -- Same value the ReadBookInShelf body reports, so the login credential and
+    -- the reading-time attribution describe one installation instead of two.
+    body.installId=Protocol.install_id(self.device_id)
     body.isAutoLogout=0; body.isFromQrcode=1
     local result=request(self.http,"POST",BASE.."/login",body,M.request_options(),"login",self.store)
     local credential=tokens(result,{deviceId=self.device_id})
